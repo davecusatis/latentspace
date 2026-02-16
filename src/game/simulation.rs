@@ -4,6 +4,11 @@ use super::projectile::Projectile;
 use super::ship::Ship;
 use crate::ai::protocol::ShipCommand;
 
+/// Number of sub-steps per turn for projectile movement and collision
+/// detection. Projectile velocity is scaled by 1/PROJECTILE_SUBSTEPS per
+/// sub-step so total displacement per turn is preserved.
+pub const PROJECTILE_SUBSTEPS: u32 = 4;
+
 #[derive(Debug, Clone)]
 pub struct GameState {
     pub ships: [Ship; 2],
@@ -72,21 +77,30 @@ impl GameState {
             }
         }
 
+        // Ship movement: once per turn (unchanged)
         for ship in &mut self.ships {
             ship.update_position();
         }
-        for proj in &mut self.projectiles {
-            proj.update();
-        }
 
-        let hit_events = combat::resolve_projectile_hits(&mut self.ships, &mut self.projectiles);
-        self.events.extend(hit_events);
+        // Projectile sub-stepping: move projectiles in smaller increments for
+        // smoother visuals and more accurate collision detection.
+        let dt = 1.0 / PROJECTILE_SUBSTEPS as f64;
+        let (w, h) = (self.arena.width, self.arena.height);
+
+        for _ in 0..PROJECTILE_SUBSTEPS {
+            for proj in &mut self.projectiles {
+                proj.update_substep(dt);
+            }
+
+            let hit_events =
+                combat::resolve_projectile_hits(&mut self.ships, &mut self.projectiles);
+            self.events.extend(hit_events);
+
+            self.projectiles.retain(|p| p.is_in_bounds(w, h));
+        }
 
         let boundary_events = combat::resolve_boundaries(&mut self.ships, &self.arena);
         self.events.extend(boundary_events);
-
-        let (w, h) = (self.arena.width, self.arena.height);
-        self.projectiles.retain(|p| p.is_in_bounds(w, h));
 
         for ship in &mut self.ships {
             ship.tick_cooldowns();
@@ -177,5 +191,50 @@ mod tests {
         let mut state = GameState::new(800.0, 400.0, 200);
         state.ships[1].health = 0;
         assert_eq!(state.result(), MatchResult::Winner(0));
+    }
+
+    #[test]
+    fn projectile_substep_preserves_total_distance() {
+        use crate::game::projectile::Projectile;
+        use crate::game::Vec2;
+
+        let vel = Vec2::new(20.0, 0.0);
+        let start = Vec2::new(100.0, 100.0);
+
+        // Single full-step update
+        let mut p_full = Projectile {
+            position: start,
+            velocity: vel,
+            damage: 10,
+            owner: 0,
+        };
+        p_full.update();
+        let full_end = p_full.position;
+
+        // Sub-stepped update
+        let mut p_sub = Projectile {
+            position: start,
+            velocity: vel,
+            damage: 10,
+            owner: 0,
+        };
+        let dt = 1.0 / PROJECTILE_SUBSTEPS as f64;
+        for _ in 0..PROJECTILE_SUBSTEPS {
+            p_sub.update_substep(dt);
+        }
+        let sub_end = p_sub.position;
+
+        assert!(
+            (full_end.x - sub_end.x).abs() < 1e-10,
+            "x: full={} sub={}",
+            full_end.x,
+            sub_end.x
+        );
+        assert!(
+            (full_end.y - sub_end.y).abs() < 1e-10,
+            "y: full={} sub={}",
+            full_end.y,
+            sub_end.y
+        );
     }
 }
