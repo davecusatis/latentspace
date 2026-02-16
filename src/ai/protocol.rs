@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use crate::game::Vec2;
 use crate::game::fog;
 use crate::game::projectile::Projectile;
-use crate::game::ship::Ship;
+use crate::game::ship::{Ship, PRIMARY_PROJECTILE_SPEED};
 
 // -- Types sent TO the AI --
 
@@ -39,6 +39,10 @@ pub struct EnemyShipView {
     pub position: Vec2,
     pub velocity: Vec2,
     pub heading: f64,
+    pub distance: f64,
+    pub bearing: f64,
+    pub turn_to_aim: f64,
+    pub lead_turn_to_aim: f64,
 }
 
 #[derive(Debug, Serialize)]
@@ -95,10 +99,38 @@ pub fn build_game_state(
     let opponent = &ships[1 - observer_idx];
 
     let enemy = if fog::is_visible(observer, opponent) {
+        let dx = opponent.position.x - observer.position.x;
+        let dy = opponent.position.y - observer.position.y;
+        let distance = observer.position.distance_to(opponent.position);
+
+        // Bearing: absolute angle from observer to opponent (degrees, 0=right, 90=down)
+        let bearing = dy.atan2(dx).to_degrees().rem_euclid(360.0);
+
+        // Turn to aim: shortest signed angle from current heading to bearing
+        let mut turn_to_aim = bearing - observer.heading;
+        if turn_to_aim > 180.0 { turn_to_aim -= 360.0; }
+        if turn_to_aim < -180.0 { turn_to_aim += 360.0; }
+
+        // Lead angle: predict where enemy will be when projectile arrives
+        let travel_time = distance / PRIMARY_PROJECTILE_SPEED;
+        let predicted_x = opponent.position.x + opponent.velocity.x * travel_time;
+        let predicted_y = opponent.position.y + opponent.velocity.y * travel_time;
+        let lead_bearing = (predicted_y - observer.position.y)
+            .atan2(predicted_x - observer.position.x)
+            .to_degrees()
+            .rem_euclid(360.0);
+        let mut lead_turn = lead_bearing - observer.heading;
+        if lead_turn > 180.0 { lead_turn -= 360.0; }
+        if lead_turn < -180.0 { lead_turn += 360.0; }
+
         Some(EnemyShipView {
             position: opponent.position,
             velocity: opponent.velocity,
             heading: opponent.heading,
+            distance,
+            bearing,
+            turn_to_aim,
+            lead_turn_to_aim: lead_turn,
         })
     } else {
         None
@@ -210,6 +242,10 @@ mod tests {
         assert!(state.enemy.is_some());
         let enemy = state.enemy.unwrap();
         assert!((enemy.heading - 90.0).abs() < 1e-10);
+        assert!((enemy.distance - 100.0).abs() < 1e-10);
+        assert!((enemy.bearing - 0.0).abs() < 1e-10);
+        // Observer heading is 0, bearing is 0, so turn_to_aim should be 0
+        assert!((enemy.turn_to_aim - 0.0).abs() < 1e-10);
     }
 
     #[test]
@@ -223,5 +259,60 @@ mod tests {
         assert_eq!(json["turn"], 1);
         assert!(json.get("self").is_some());
         assert!(json["enemy"].is_null());
+    }
+
+    #[test]
+    fn turn_to_aim_zero_when_facing_enemy() {
+        // Observer at origin heading 0 (right), enemy directly to the right
+        let ships = [
+            Ship::new(Vec2::new(0.0, 0.0), 0.0),
+            Ship::new(Vec2::new(100.0, 0.0), 0.0),
+        ];
+        let state = build_game_state(1, 0, &ships, &[], 800.0, 400.0);
+        let enemy = state.enemy.unwrap();
+        assert!((enemy.turn_to_aim).abs() < 1e-10);
+    }
+
+    #[test]
+    fn turn_to_aim_positive_when_enemy_to_right() {
+        // Observer at origin heading 0 (right), enemy is below-right (positive y = clockwise)
+        let ships = [
+            Ship::new(Vec2::new(0.0, 0.0), 0.0),
+            Ship::new(Vec2::new(50.0, 50.0), 0.0),
+        ];
+        let state = build_game_state(1, 0, &ships, &[], 800.0, 400.0);
+        let enemy = state.enemy.unwrap();
+        assert!(enemy.turn_to_aim > 0.0, "turn_to_aim should be positive, got {}", enemy.turn_to_aim);
+    }
+
+    #[test]
+    fn turn_to_aim_negative_when_enemy_to_left() {
+        // Observer at origin heading 0 (right), enemy is above-right (negative y = counter-clockwise)
+        let ships = [
+            Ship::new(Vec2::new(0.0, 0.0), 0.0),
+            Ship::new(Vec2::new(50.0, -50.0), 0.0),
+        ];
+        let state = build_game_state(1, 0, &ships, &[], 800.0, 400.0);
+        let enemy = state.enemy.unwrap();
+        assert!(enemy.turn_to_aim < 0.0, "turn_to_aim should be negative, got {}", enemy.turn_to_aim);
+    }
+
+    #[test]
+    fn lead_turn_differs_when_enemy_has_velocity() {
+        // Enemy moving perpendicular to the line between ships
+        let mut ships = [
+            Ship::new(Vec2::new(0.0, 0.0), 0.0),
+            Ship::new(Vec2::new(100.0, 0.0), 0.0),
+        ];
+        // Give the enemy upward velocity
+        ships[1].velocity = Vec2::new(0.0, 10.0);
+        let state = build_game_state(1, 0, &ships, &[], 800.0, 400.0);
+        let enemy = state.enemy.unwrap();
+        // turn_to_aim should be ~0 (enemy is directly ahead)
+        assert!((enemy.turn_to_aim).abs() < 1e-10);
+        // lead_turn_to_aim should differ because enemy is moving
+        assert!((enemy.lead_turn_to_aim - enemy.turn_to_aim).abs() > 1.0,
+            "lead_turn_to_aim ({}) should differ from turn_to_aim ({})",
+            enemy.lead_turn_to_aim, enemy.turn_to_aim);
     }
 }
