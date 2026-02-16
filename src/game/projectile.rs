@@ -36,6 +36,13 @@ impl Projectile {
         self.position = self.position + self.velocity;
     }
 
+    /// Update position with a fractional time step.
+    /// `dt` should be 1.0/substeps so the total displacement per full turn
+    /// is the same as a single `update()` call.
+    pub fn update_substep(&mut self, dt: f64) {
+        self.position = self.position + self.velocity * dt;
+    }
+
     pub fn is_in_bounds(&self, arena_width: f64, arena_height: f64) -> bool {
         self.position.x >= 0.0
             && self.position.x <= arena_width
@@ -74,5 +81,22 @@ mod tests {
         let mut proj = Projectile::spawn_primary(&ship, 0);
         proj.position = Vec2::new(-5.0, 100.0);
         assert!(!proj.is_in_bounds(800.0, 400.0));
+    }
+
+    #[test]
+    fn substep_update_scales_movement() {
+        let ship = ship::Ship::new(Vec2::new(100.0, 100.0), 0.0);
+        let mut proj = Projectile::spawn_primary(&ship, 0);
+        let start_x = proj.position.x;
+        proj.update_substep(0.25);
+        let quarter_move = proj.position.x - start_x;
+        // A quarter-step should move roughly 1/4 of the full velocity
+        let expected = proj.velocity.x * 0.25;
+        assert!(
+            (quarter_move - expected).abs() < 1e-10,
+            "quarter_move={} expected={}",
+            quarter_move,
+            expected
+        );
     }
 }
