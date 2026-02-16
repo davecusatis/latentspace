@@ -7,6 +7,7 @@ Strategy: AGGRESSIVE
 - Never use shields — offense is the best defense
 - When enemy is not visible, thrust forward and sweep to find them
 - Aim by turning to face the enemy before firing
+- When detected_by_enemy is true, the enemy knows your position — strike fast before they react
 
 Respond with ONLY a JSON object:
 {"thrust": 0.0-1.0, "turn": -30 to 30, "fire_primary": bool, "fire_secondary": bool, "shield": bool}
