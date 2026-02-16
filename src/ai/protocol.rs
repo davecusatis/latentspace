@@ -15,6 +15,7 @@ pub struct GameStateMessage {
     pub detected_projectiles: Vec<ProjectileView>,
     pub arena: ArenaView,
     pub sensor_range: f64,
+    pub detected_by_enemy: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -94,6 +95,8 @@ pub fn build_game_state(
     let observer = &ships[observer_idx];
     let opponent = &ships[1 - observer_idx];
 
+    let detected_by_enemy = fog::is_visible(opponent, observer);
+
     let enemy = if fog::is_visible(observer, opponent) {
         Some(EnemyShipView {
             position: opponent.position,
@@ -134,6 +137,7 @@ pub fn build_game_state(
             height: arena_height,
         },
         sensor_range: crate::game::ship::SENSOR_RANGE,
+        detected_by_enemy,
     }
 }
 
@@ -198,6 +202,7 @@ mod tests {
         ];
         let state = build_game_state(1, 0, &ships, &[], 800.0, 400.0);
         assert!(state.enemy.is_none());
+        assert!(!state.detected_by_enemy);
     }
 
     #[test]
@@ -208,6 +213,7 @@ mod tests {
         ];
         let state = build_game_state(1, 0, &ships, &[], 800.0, 400.0);
         assert!(state.enemy.is_some());
+        assert!(state.detected_by_enemy);
         let enemy = state.enemy.unwrap();
         assert!((enemy.heading - 90.0).abs() < 1e-10);
     }
@@ -223,5 +229,30 @@ mod tests {
         assert_eq!(json["turn"], 1);
         assert!(json.get("self").is_some());
         assert!(json["enemy"].is_null());
+        assert_eq!(json["detected_by_enemy"], false);
+    }
+
+    #[test]
+    fn detected_by_enemy_true_when_in_range() {
+        let ships = [
+            Ship::new(Vec2::new(100.0, 100.0), 0.0),
+            Ship::new(Vec2::new(200.0, 100.0), 0.0),
+        ];
+        let state0 = build_game_state(1, 0, &ships, &[], 800.0, 400.0);
+        let state1 = build_game_state(1, 1, &ships, &[], 800.0, 400.0);
+        assert!(state0.detected_by_enemy);
+        assert!(state1.detected_by_enemy);
+    }
+
+    #[test]
+    fn detected_by_enemy_false_when_far_apart() {
+        let ships = [
+            Ship::new(Vec2::new(0.0, 0.0), 0.0),
+            Ship::new(Vec2::new(500.0, 500.0), 0.0),
+        ];
+        let state0 = build_game_state(1, 0, &ships, &[], 800.0, 400.0);
+        let state1 = build_game_state(1, 1, &ships, &[], 800.0, 400.0);
+        assert!(!state0.detected_by_enemy);
+        assert!(!state1.detected_by_enemy);
     }
 }
