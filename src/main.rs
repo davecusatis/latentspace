@@ -7,7 +7,7 @@ use std::io;
 use std::time::{Duration, Instant};
 
 use clap::Parser;
-use crossterm::event::{self, Event, KeyCode};
+use crossterm::event::{self, Event, KeyCode, KeyEventKind};
 use crossterm::terminal::{self, EnterAlternateScreen, LeaveAlternateScreen};
 use crossterm::ExecutableCommand;
 use ratatui::backend::CrosstermBackend;
@@ -217,13 +217,15 @@ async fn run_game(
             // Check for Ctrl+C or debug toggle
             if event::poll(Duration::from_millis(0))? {
                 if let Event::Key(key) = event::read()? {
-                    if key.code == KeyCode::Char('c')
-                        && key.modifiers.contains(crossterm::event::KeyModifiers::CONTROL)
-                    {
-                        return Ok(game.result());
-                    }
-                    if key.code == KeyCode::Char('d') {
-                        debug_visible = !debug_visible;
+                    if key.kind == KeyEventKind::Press {
+                        if key.code == KeyCode::Char('c')
+                            && key.modifiers.contains(crossterm::event::KeyModifiers::CONTROL)
+                        {
+                            return Ok(game.result());
+                        }
+                        if key.code == KeyCode::Char('d') {
+                            debug_visible = !debug_visible;
+                        }
                     }
                 }
             }
@@ -334,13 +336,15 @@ async fn run_game(
             // Check for Ctrl+C or debug toggle
             if event::poll(Duration::from_millis(16))? {
                 if let Event::Key(key) = event::read()? {
-                    if key.code == KeyCode::Char('c')
-                        && key.modifiers.contains(crossterm::event::KeyModifiers::CONTROL)
-                    {
-                        return Ok(game.result());
-                    }
-                    if key.code == KeyCode::Char('d') {
-                        debug_visible = !debug_visible;
+                    if key.kind == KeyEventKind::Press {
+                        if key.code == KeyCode::Char('c')
+                            && key.modifiers.contains(crossterm::event::KeyModifiers::CONTROL)
+                        {
+                            return Ok(game.result());
+                        }
+                        if key.code == KeyCode::Char('d') {
+                            debug_visible = !debug_visible;
+                        }
                     }
                 }
             }
