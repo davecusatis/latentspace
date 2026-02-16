@@ -18,6 +18,7 @@ pub const THRUST_FORCE: f64 = 5.0;
 pub const DRAG: f64 = 0.92;
 pub const MAX_TURN_RATE: f64 = 30.0;
 pub const SENSOR_RANGE: f64 = 150.0;
+pub const SHIP_COLLISION_RADIUS: f64 = 8.0;
 pub const SHIELD_DAMAGE_REDUCTION: f64 = 0.5;
 pub const PRIMARY_PROJECTILE_SPEED: f64 = 20.0;
 pub const SECONDARY_PROJECTILE_SPEED: f64 = 16.0;
