@@ -3,6 +3,7 @@ pub mod projectile;
 pub mod arena;
 pub mod combat;
 pub mod fog;
+pub mod simulation;
 
 /// 2D vector used for positions and velocities.
 #[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
