@@ -18,6 +18,7 @@ use ai::protocol::{self, ShipCommand};
 use canvas::renderer::PixelCanvas;
 use canvas::sprites::{self, Viewport};
 use game::simulation::{GameState, MatchResult};
+use ui::debug_overlay::DebugOverlay;
 use ui::hud::{MatchInfo, ShipHud};
 use ui::layout::AppLayout;
 use ui::marquee::EventLog;
@@ -160,6 +161,9 @@ async fn run_game(
     ship2_name: &str,
     interp_dur: Duration,
 ) -> Result<MatchResult, Box<dyn std::error::Error>> {
+    let mut debug_visible = false;
+    let mut last_commands = [ShipCommand::default(), ShipCommand::default()];
+
     loop {
         // Snapshot previous state for interpolation
         let prev_ships = game.ships.clone();
@@ -210,13 +214,16 @@ async fn run_game(
             // Render frame with projectile extrapolation
             let elapsed = ai_start.elapsed().as_secs_f64();
 
-            // Check for Ctrl+C
+            // Check for Ctrl+C or debug toggle
             if event::poll(Duration::from_millis(0))? {
                 if let Event::Key(key) = event::read()? {
                     if key.code == KeyCode::Char('c')
                         && key.modifiers.contains(crossterm::event::KeyModifiers::CONTROL)
                     {
                         return Ok(game.result());
+                    }
+                    if key.code == KeyCode::Char('d') {
+                        debug_visible = !debug_visible;
                     }
                 }
             }
@@ -260,6 +267,17 @@ async fn run_game(
 
                 frame.render_widget(&canvas, layout.arena);
 
+                if debug_visible {
+                    frame.render_widget(
+                        DebugOverlay {
+                            game,
+                            commands: &last_commands,
+                            ship_names: [ship1_name, ship2_name],
+                        },
+                        layout.arena,
+                    );
+                }
+
                 // HUD
                 frame.render_widget(
                     ShipHud {
@@ -292,6 +310,7 @@ async fn run_game(
 
         let cmd1 = cmd1_result.unwrap();
         let cmd2 = cmd2_result.unwrap();
+        last_commands = [cmd1.clone(), cmd2.clone()];
 
         // Apply Phase 1 elapsed movement to actual projectile positions so
         // they continue from where they were visually, not snap back.
@@ -312,13 +331,16 @@ async fn run_game(
             let t = start.elapsed().as_secs_f64() / interp_dur.as_secs_f64();
             let t = t.min(1.0);
 
-            // Check for Ctrl+C
+            // Check for Ctrl+C or debug toggle
             if event::poll(Duration::from_millis(16))? {
                 if let Event::Key(key) = event::read()? {
                     if key.code == KeyCode::Char('c')
                         && key.modifiers.contains(crossterm::event::KeyModifiers::CONTROL)
                     {
                         return Ok(game.result());
+                    }
+                    if key.code == KeyCode::Char('d') {
+                        debug_visible = !debug_visible;
                     }
                 }
             }
@@ -350,6 +372,17 @@ async fn run_game(
                 }
 
                 frame.render_widget(&canvas, layout.arena);
+
+                if debug_visible {
+                    frame.render_widget(
+                        DebugOverlay {
+                            game,
+                            commands: &last_commands,
+                            ship_names: [ship1_name, ship2_name],
+                        },
+                        layout.arena,
+                    );
+                }
 
                 // HUD
                 frame.render_widget(
