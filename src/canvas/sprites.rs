@@ -65,6 +65,30 @@ pub fn draw_projectile(canvas: &mut PixelCanvas, proj: &Projectile, vp: &Viewpor
     canvas.draw_circle(px, py, 2.0, PROJECTILE_COLOR);
 }
 
+/// Draw a deterministic starfield background across the canvas.
+/// Uses a position-based hash to produce the same pattern every frame.
+pub fn draw_starfield(canvas: &mut PixelCanvas) {
+    let w = canvas.pixel_width();
+    let h = canvas.pixel_height();
+    let num_stars: usize = 150;
+
+    for i in 0..num_stars {
+        // Deterministic pseudo-random positions using a simple hash
+        let seed = (i as u64).wrapping_mul(2654435761); // Knuth multiplicative hash
+        let x = (seed.wrapping_mul(7 + i as u64) % w as u64) as usize;
+        let y = (seed.wrapping_mul(13 + i as u64) % h as u64) as usize;
+
+        // Vary star brightness: mostly dim, some bright
+        let color = match i % 10 {
+            0 => Color::White,        // 10% bright white
+            1 | 2 => Color::Gray,     // 20% medium gray
+            _ => Color::DarkGray,     // 70% dim
+        };
+
+        canvas.set_pixel(x, y, color);
+    }
+}
+
 /// Draw the arena boundary as a dim border.
 pub fn draw_arena_border(canvas: &mut PixelCanvas) {
     let w = canvas.pixel_width();

@@ -158,15 +158,17 @@ impl Widget for &PixelCanvas {
                 if self.dots[(py + 2) * self.width + px + 1] { pattern |= 0x20; }
                 if self.dots[(py + 3) * self.width + px + 1] { pattern |= 0x80; }
 
+                let cell = &mut buf[(area.x + col as u16, area.y + row as u16)];
                 if pattern != 0 {
                     let ch = char::from_u32(0x2800 + pattern as u32).unwrap();
                     let cell_w = self.width / 2;
                     let color = self.cell_colors[row * cell_w + col];
-                    let cell = &mut buf[(area.x + col as u16, area.y + row as u16)];
                     cell.set_char(ch);
                     cell.set_fg(color);
-                    cell.set_bg(Color::Black);
+                } else {
+                    cell.set_char(' ');
                 }
+                cell.set_bg(Color::Black);
             }
         }
     }
