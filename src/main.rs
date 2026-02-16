@@ -14,19 +14,13 @@ use ratatui::backend::CrosstermBackend;
 use ratatui::Terminal;
 
 use ai::client::AiAgent;
-use ai::protocol;
+use ai::protocol::{self, ShipCommand};
 use canvas::renderer::PixelCanvas;
 use canvas::sprites::{self, Viewport};
 use game::simulation::{GameState, MatchResult};
 use ui::hud::{MatchInfo, ShipHud};
 use ui::layout::AppLayout;
 use ui::marquee::EventLog;
-
-/// Projectiles complete their visual interpolation this many times faster than
-/// ships.  With a value of 3.0 and a normal interpolation window of 400 ms,
-/// projectiles reach their final position in ~133 ms, making them visually
-/// distinct from the slower ship movement.
-const PROJECTILE_VISUAL_SPEED: f64 = 3.0;
 
 #[derive(Parser)]
 #[command(name = "latentspace")]
@@ -189,17 +183,121 @@ async fn run_game(
             game.arena.height,
         ))?;
 
-        // Request commands from both AIs in parallel
-        let (cmd1, cmd2) = tokio::join!(
-            agent1.get_command(&state1_json),
-            agent2.get_command(&state2_json),
-        );
+        // ===== PHASE 1: Render continuously while waiting for AI responses =====
+        let ai_start = Instant::now();
 
-        // Advance simulation
+        let cmd1_future = agent1.get_command(&state1_json);
+        let cmd2_future = agent2.get_command(&state2_json);
+        tokio::pin!(cmd1_future);
+        tokio::pin!(cmd2_future);
+
+        let mut cmd1_result: Option<ShipCommand> = None;
+        let mut cmd2_result: Option<ShipCommand> = None;
+
+        while cmd1_result.is_none() || cmd2_result.is_none() {
+            // Poll AI futures with a short timeout for frame rendering
+            tokio::select! {
+                biased;
+                cmd = &mut cmd1_future, if cmd1_result.is_none() => {
+                    cmd1_result = Some(cmd);
+                }
+                cmd = &mut cmd2_future, if cmd2_result.is_none() => {
+                    cmd2_result = Some(cmd);
+                }
+                _ = tokio::time::sleep(Duration::from_millis(16)) => {}
+            }
+
+            // Render frame with projectile extrapolation
+            let elapsed = ai_start.elapsed().as_secs_f64();
+
+            // Check for Ctrl+C
+            if event::poll(Duration::from_millis(0))? {
+                if let Event::Key(key) = event::read()? {
+                    if key.code == KeyCode::Char('c')
+                        && key.modifiers.contains(crossterm::event::KeyModifiers::CONTROL)
+                    {
+                        return Ok(game.result());
+                    }
+                }
+            }
+
+            terminal.draw(|frame| {
+                let layout = AppLayout::compute(frame.area());
+
+                let pixel_w = layout.arena.width as usize;
+                let pixel_h = (layout.arena.height as usize) * 2;
+                let mut canvas = PixelCanvas::new(pixel_w, pixel_h);
+                let vp =
+                    Viewport::new(game.arena.width, game.arena.height, pixel_w, pixel_h);
+
+                sprites::draw_arena_border(&mut canvas);
+
+                // Ships: stay at current position (no new commands yet)
+                for (i, ship) in game.ships.iter().enumerate() {
+                    sprites::draw_sensor_range(&mut canvas, ship, &vp);
+                    sprites::draw_ship(&mut canvas, ship, i, &vp);
+                    sprites::draw_shield(&mut canvas, ship, i, &vp);
+                }
+
+                // Projectiles: extrapolate forward using velocity.
+                // velocity is in game-units per turn; one turn corresponds
+                // to interp_dur of real time, so elapsed / interp_dur gives
+                // the fraction of a turn to advance.
+                let proj_t = elapsed / interp_dur.as_secs_f64();
+                for proj in &prev_projectiles {
+                    let visual_pos = proj.position + proj.velocity * proj_t;
+                    // Only draw if still within arena bounds
+                    if visual_pos.x >= 0.0
+                        && visual_pos.x <= game.arena.width
+                        && visual_pos.y >= 0.0
+                        && visual_pos.y <= game.arena.height
+                    {
+                        let mut visual_proj = proj.clone();
+                        visual_proj.position = visual_pos;
+                        sprites::draw_projectile(&mut canvas, &visual_proj, &vp);
+                    }
+                }
+
+                frame.render_widget(&canvas, layout.arena);
+
+                // HUD
+                frame.render_widget(
+                    ShipHud {
+                        ship: &game.ships[0],
+                        name: ship1_name,
+                        color: ratatui::style::Color::Cyan,
+                    },
+                    layout.ship1_hud,
+                );
+                frame.render_widget(
+                    ShipHud {
+                        ship: &game.ships[1],
+                        name: ship2_name,
+                        color: ratatui::style::Color::Magenta,
+                    },
+                    layout.ship2_hud,
+                );
+                frame.render_widget(
+                    MatchInfo {
+                        turn: game.turn,
+                        max_turns: game.max_turns,
+                    },
+                    layout.match_info,
+                );
+
+                // Marquee
+                frame.render_widget(event_log.widget(), layout.marquee);
+            })?;
+        }
+
+        let cmd1 = cmd1_result.unwrap();
+        let cmd2 = cmd2_result.unwrap();
+
+        // ===== Advance simulation =====
         game.advance([cmd1, cmd2]);
         event_log.push_game_events(&game.events);
 
-        // Interpolated rendering
+        // ===== PHASE 2: Ship interpolation after advance =====
         let start = Instant::now();
         while start.elapsed() < interp_dur {
             let t = start.elapsed().as_secs_f64() / interp_dur.as_secs_f64();
@@ -219,7 +317,6 @@ async fn run_game(
             terminal.draw(|frame| {
                 let layout = AppLayout::compute(frame.area());
 
-                // Canvas
                 let pixel_w = layout.arena.width as usize;
                 let pixel_h = (layout.arena.height as usize) * 2;
                 let mut canvas = PixelCanvas::new(pixel_w, pixel_h);
@@ -228,7 +325,7 @@ async fn run_game(
 
                 sprites::draw_arena_border(&mut canvas);
 
-                // Interpolate ship positions
+                // Interpolate ships from prev to current positions
                 for (i, prev_ship) in prev_ships.iter().enumerate() {
                     let mut interp_ship = game.ships[i].clone();
                     interp_ship.position =
@@ -238,16 +335,9 @@ async fn run_game(
                     sprites::draw_shield(&mut canvas, &interp_ship, i, &vp);
                 }
 
-                // Interpolate projectile positions — projectiles move visually
-                // faster than ships so combat reads more clearly.
-                let proj_t = (t * PROJECTILE_VISUAL_SPEED).min(1.0);
-                for (j, proj) in game.projectiles.iter().enumerate() {
-                    let mut interp_proj = proj.clone();
-                    if j < prev_projectiles.len() {
-                        interp_proj.position =
-                            prev_projectiles[j].position.lerp(proj.position, proj_t);
-                    }
-                    sprites::draw_projectile(&mut canvas, &interp_proj, &vp);
+                // Projectiles at their post-advance positions
+                for proj in &game.projectiles {
+                    sprites::draw_projectile(&mut canvas, proj, &vp);
                 }
 
                 frame.render_widget(&canvas, layout.arena);
