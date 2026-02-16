@@ -20,7 +20,8 @@ impl Widget for ShipHud<'_> {
                 Style::default().fg(self.color),
             ))
             .borders(Borders::ALL)
-            .border_style(Style::default().fg(self.color));
+            .border_style(Style::default().fg(self.color))
+            .style(Style::default().bg(Color::Black));
 
         let inner = block.inner(area);
         block.render(area, buf);
@@ -99,7 +100,8 @@ impl Widget for MatchInfo {
         let block = Block::default()
             .title(" Match ")
             .borders(Borders::ALL)
-            .border_style(Style::default().fg(Color::White));
+            .border_style(Style::default().fg(Color::White))
+            .style(Style::default().bg(Color::Black));
         let inner = block.inner(area);
         block.render(area, buf);
 

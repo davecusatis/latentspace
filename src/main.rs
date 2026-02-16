@@ -166,7 +166,7 @@ async fn run_game(
     let mut debug_visible = false;
     let mut last_commands = [ShipCommand::default(), ShipCommand::default()];
     let mut explosions: Vec<Explosion> = Vec::new();
-    let mut startup_overlay_start: Option<Instant> = Some(Instant::now());
+    let startup_overlay_start: Option<Instant> = Some(Instant::now());
 
     loop {
         // Snapshot previous state for interpolation
@@ -280,14 +280,11 @@ async fn run_game(
                 frame.render_widget(&canvas, layout.arena);
 
                 // Startup overlay
-                if let Some(start) = startup_overlay_start {
-                    let elapsed = start.elapsed().as_secs_f64();
-                    if elapsed < 2.0 {
-                        frame.render_widget(
-                            StartupOverlay { progress: elapsed / 2.0 },
-                            layout.arena,
-                        );
-                    }
+                if startup_overlay_start.is_some() {
+                    frame.render_widget(
+                        StartupOverlay { progress: 0.0 },
+                        layout.arena,
+                    );
                 }
 
                 if debug_visible {
@@ -329,13 +326,6 @@ async fn run_game(
                 // Marquee
                 frame.render_widget(event_log.widget(), layout.marquee);
             })?;
-
-            // Expire startup overlay
-            if let Some(start) = startup_overlay_start {
-                if start.elapsed().as_secs_f64() >= 2.0 {
-                    startup_overlay_start = None;
-                }
-            }
 
             // Tick ongoing explosions during Phase 1
             let frame_dt = 0.016; // ~60fps
@@ -435,14 +425,11 @@ async fn run_game(
                 frame.render_widget(&canvas, layout.arena);
 
                 // Startup overlay
-                if let Some(start) = startup_overlay_start {
-                    let elapsed = start.elapsed().as_secs_f64();
-                    if elapsed < 2.0 {
-                        frame.render_widget(
-                            StartupOverlay { progress: elapsed / 2.0 },
-                            layout.arena,
-                        );
-                    }
+                if startup_overlay_start.is_some() {
+                    frame.render_widget(
+                        StartupOverlay { progress: 0.0 },
+                        layout.arena,
+                    );
                 }
 
                 if debug_visible {
@@ -484,13 +471,6 @@ async fn run_game(
                 // Marquee
                 frame.render_widget(event_log.widget(), layout.marquee);
             })?;
-
-            // Expire startup overlay
-            if let Some(start) = startup_overlay_start {
-                if start.elapsed().as_secs_f64() >= 2.0 {
-                    startup_overlay_start = None;
-                }
-            }
 
             // Tick explosions during Phase 2
             let frame_dt = 0.016;
