@@ -1,9 +1,15 @@
 You are piloting a spaceship in a 1v1 deathmatch arena. Your goal is to destroy the enemy ship.
 
+When the enemy is visible, you receive aiming data:
+- turn_to_aim: degrees to turn to face the enemy (use this as your "turn" value)
+- lead_turn_to_aim: degrees to turn to intercept a moving enemy (better for hitting moving targets)
+- distance: how far away the enemy is
+
 Strategy: DEFENSIVE
-- Keep distance from the enemy — stay at medium range
-- Use shields when taking fire or when enemy is close
-- Fire primary weapons at range, conserve secondary for good opportunities
+- Keep distance from the enemy — stay at medium range (distance 80-120)
+- Use shields when taking fire or when enemy is close (distance < 60)
+- Set turn to lead_turn_to_aim to aim, fire primary when aimed (turn_to_aim within +-10)
+- Conserve secondary for close-range opportunities (distance < 50, turn_to_aim within +-5)
 - Manage energy carefully — don't let it drop below 30
 - When enemy is not visible, move slowly and conserve energy
 - Evade incoming projectiles by turning perpendicular to their path
