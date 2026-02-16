@@ -4,6 +4,7 @@ use super::renderer::PixelCanvas;
 use crate::game::ship::Ship;
 use crate::game::projectile::Projectile;
 use crate::game::ship::SENSOR_RANGE;
+use crate::game::Vec2;
 
 /// Map game coordinates to pixel coordinates on the canvas.
 pub struct Viewport {
@@ -84,6 +85,77 @@ pub fn draw_shield(canvas: &mut PixelCanvas, ship: &Ship, ship_idx: usize, vp: &
         canvas.draw_ring(cx, cy, 10.0, 2.0, color);
     }
     let _ = ship_idx;
+}
+
+/// An active explosion animation at a point in the arena.
+pub struct Explosion {
+    pub position: Vec2,
+    pub age: f64,
+    pub duration: f64,
+    pub radius: f64,
+}
+
+impl Explosion {
+    /// Create a hit explosion (small, short).
+    pub fn hit(position: Vec2) -> Self {
+        Self { position, age: 0.0, duration: 0.4, radius: 20.0 }
+    }
+
+    /// Create a destruction explosion (large, long).
+    pub fn destroyed(position: Vec2) -> Self {
+        Self { position, age: 0.0, duration: 0.8, radius: 35.0 }
+    }
+
+    /// Advance the explosion's age by `dt` seconds.
+    pub fn tick(&mut self, dt: f64) {
+        self.age += dt;
+    }
+
+    /// Whether the explosion is still visible.
+    pub fn is_alive(&self) -> bool {
+        self.age < self.duration
+    }
+}
+
+/// Draw an explosion as an expanding, fading ring with inner debris particles.
+pub fn draw_explosion(canvas: &mut PixelCanvas, explosion: &Explosion, vp: &Viewport) {
+    let t = (explosion.age / explosion.duration).clamp(0.0, 1.0);
+    let cx = vp.to_pixel_x(explosion.position.x);
+    let cy = vp.to_pixel_y(explosion.position.y);
+    let current_radius = vp.to_pixel_radius(explosion.radius) * t;
+
+    // Color fades: Yellow -> Red -> DarkRed
+    let color = if t < 0.3 {
+        Color::Yellow
+    } else if t < 0.7 {
+        Color::Red
+    } else {
+        Color::Rgb(139, 0, 0) // DarkRed
+    };
+
+    // Expanding ring
+    let thickness = 2.0_f64.max(current_radius * 0.2);
+    if current_radius > 0.5 {
+        canvas.draw_ring(cx, cy, current_radius, thickness, color);
+    }
+
+    // Inner debris particles — deterministic pattern based on position hash
+    let seed = (explosion.position.x * 7.0 + explosion.position.y * 13.0) as u64;
+    let num_particles = 8;
+    let fade = 1.0 - t; // particles fade out
+    if fade > 0.1 {
+        for i in 0..num_particles {
+            // Distribute particles pseudo-randomly inside the ring
+            let angle = (seed.wrapping_mul(i as u64 + 1) % 360) as f64 * std::f64::consts::PI / 180.0;
+            let dist_frac = ((seed.wrapping_mul(i as u64 + 3) % 80) as f64 + 20.0) / 100.0;
+            let dist = current_radius * dist_frac;
+            let px = cx + angle.cos() * dist;
+            let py = cy + angle.sin() * dist;
+            let ix = px.round() as usize;
+            let iy = py.round() as usize;
+            canvas.set_pixel(ix, iy, color);
+        }
+    }
 }
 
 #[cfg(test)]

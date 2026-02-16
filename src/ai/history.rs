@@ -36,7 +36,7 @@ impl ConversationHistory {
 
     pub fn add_assistant(&mut self, content: String) {
         self.messages.push(Message {
-            role: "assistant".to_string(),
+            role: "model".to_string(),
             content,
         });
         self.trim();

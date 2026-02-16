@@ -16,7 +16,8 @@ use ratatui::Terminal;
 use ai::client::AiAgent;
 use ai::protocol::{self, ShipCommand};
 use canvas::renderer::PixelCanvas;
-use canvas::sprites::{self, Viewport};
+use canvas::sprites::{self, Explosion, Viewport};
+use game::combat::GameEvent;
 use game::simulation::{GameState, MatchResult};
 use ui::debug_overlay::DebugOverlay;
 use ui::hud::{MatchInfo, ShipHud};
@@ -47,8 +48,8 @@ struct Cli {
     #[arg(long, default_value = "normal")]
     speed: String,
 
-    /// Anthropic API key (or set ANTHROPIC_API_KEY env var)
-    #[arg(long, env = "ANTHROPIC_API_KEY")]
+    /// Google API key (or set GOOGLE_API_KEY env var)
+    #[arg(long, env = "GOOGLE_API_KEY")]
     api_key: String,
 }
 
@@ -163,6 +164,7 @@ async fn run_game(
 ) -> Result<MatchResult, Box<dyn std::error::Error>> {
     let mut debug_visible = false;
     let mut last_commands = [ShipCommand::default(), ShipCommand::default()];
+    let mut explosions: Vec<Explosion> = Vec::new();
 
     loop {
         // Snapshot previous state for interpolation
@@ -267,6 +269,11 @@ async fn run_game(
                     }
                 }
 
+                // Active explosions (continuing from previous turn)
+                for explosion in &explosions {
+                    sprites::draw_explosion(&mut canvas, explosion, &vp);
+                }
+
                 frame.render_widget(&canvas, layout.arena);
 
                 if debug_visible {
@@ -308,6 +315,13 @@ async fn run_game(
                 // Marquee
                 frame.render_widget(event_log.widget(), layout.marquee);
             })?;
+
+            // Tick ongoing explosions during Phase 1
+            let frame_dt = 0.016; // ~60fps
+            for explosion in &mut explosions {
+                explosion.tick(frame_dt);
+            }
+            explosions.retain(|e| e.is_alive());
         }
 
         let cmd1 = cmd1_result.unwrap();
@@ -326,6 +340,19 @@ async fn run_game(
         // ===== Advance simulation =====
         game.advance([cmd1, cmd2]);
         event_log.push_game_events(&game.events);
+
+        // Spawn explosions for hit/destroyed events
+        for event in &game.events {
+            match event {
+                GameEvent::ShipHit { target, .. } => {
+                    explosions.push(Explosion::hit(game.ships[*target].position));
+                }
+                GameEvent::ShipDestroyed(i) => {
+                    explosions.push(Explosion::destroyed(game.ships[*i].position));
+                }
+                _ => {}
+            }
+        }
 
         // ===== PHASE 2: Ship interpolation after advance =====
         let start = Instant::now();
@@ -375,6 +402,11 @@ async fn run_game(
                     sprites::draw_projectile(&mut canvas, proj, &vp);
                 }
 
+                // Active explosions
+                for explosion in &explosions {
+                    sprites::draw_explosion(&mut canvas, explosion, &vp);
+                }
+
                 frame.render_widget(&canvas, layout.arena);
 
                 if debug_visible {
@@ -416,6 +448,13 @@ async fn run_game(
                 // Marquee
                 frame.render_widget(event_log.widget(), layout.marquee);
             })?;
+
+            // Tick explosions during Phase 2
+            let frame_dt = 0.016;
+            for explosion in &mut explosions {
+                explosion.tick(frame_dt);
+            }
+            explosions.retain(|e| e.is_alive());
         }
 
         // Check end condition

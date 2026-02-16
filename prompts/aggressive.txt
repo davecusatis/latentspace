@@ -6,11 +6,7 @@ When the enemy is visible, you receive aiming data:
 - distance: how far away the enemy is
 
 Strategy: AGGRESSIVE
-- Set turn to lead_turn_to_aim to aim where the enemy will be
-- Fire primary whenever enemy is in range and you're roughly aimed (turn_to_aim within +-15)
-- Fire secondary when close and well-aimed (turn_to_aim within +-5)
-- Full thrust toward the enemy at all times
-- When detected_by_enemy is true, the enemy knows your position — strike fast before they react
+- shoot first, ask questions last.
 
 Respond with ONLY a JSON object:
 {"thrust": 0.0-1.0, "turn": -30 to 30, "fire_primary": bool, "fire_secondary": bool, "shield": bool}

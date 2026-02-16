@@ -5,27 +5,49 @@ use std::time::Duration;
 use super::history::ConversationHistory;
 use super::protocol::{self, ShipCommand};
 
-const API_URL: &str = "https://api.anthropic.com/v1/messages";
-const MODEL: &str = "claude-sonnet-4-5-20250929";
+const API_URL: &str = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent";
 const AI_TIMEOUT: Duration = Duration::from_secs(5);
 const MAX_TOKENS: i32 = 256;
 
 #[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
 struct ApiRequest {
-    model: String,
-    max_tokens: i32,
-    system: String,
-    messages: Vec<super::history::Message>,
+    system_instruction: GeminiContent,
+    contents: Vec<GeminiContent>,
+    generation_config: GenerationConfig,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct GenerationConfig {
+    max_output_tokens: i32,
+}
+
+#[derive(Debug, Serialize)]
+struct GeminiContent {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    role: Option<String>,
+    parts: Vec<GeminiPart>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct GeminiPart {
+    text: String,
 }
 
 #[derive(Debug, Deserialize)]
 struct ApiResponse {
-    content: Vec<ContentBlock>,
+    candidates: Vec<Candidate>,
 }
 
 #[derive(Debug, Deserialize)]
-struct ContentBlock {
-    text: Option<String>,
+struct Candidate {
+    content: CandidateContent,
+}
+
+#[derive(Debug, Deserialize)]
+struct CandidateContent {
+    parts: Vec<GeminiPart>,
 }
 
 pub struct AiAgent {
@@ -50,18 +72,36 @@ impl AiAgent {
     pub async fn get_command(&mut self, game_state_json: &str) -> ShipCommand {
         self.history.add_user(game_state_json.to_string());
 
+        let contents: Vec<GeminiContent> = self
+            .history
+            .messages()
+            .iter()
+            .map(|m| GeminiContent {
+                role: Some(m.role.clone()),
+                parts: vec![GeminiPart {
+                    text: m.content.clone(),
+                }],
+            })
+            .collect();
+
         let request = ApiRequest {
-            model: MODEL.to_string(),
-            max_tokens: MAX_TOKENS,
-            system: self.system_prompt.clone(),
-            messages: self.history.messages().to_vec(),
+            system_instruction: GeminiContent {
+                role: None,
+                parts: vec![GeminiPart {
+                    text: self.system_prompt.clone(),
+                }],
+            },
+            contents,
+            generation_config: GenerationConfig {
+                max_output_tokens: MAX_TOKENS,
+            },
         };
+
+        let url = format!("{}?key={}", API_URL, self.api_key);
 
         let result = tokio::time::timeout(AI_TIMEOUT, async {
             self.client
-                .post(API_URL)
-                .header("x-api-key", &self.api_key)
-                .header("anthropic-version", "2023-06-01")
+                .post(&url)
                 .header("content-type", "application/json")
                 .json(&request)
                 .send()
@@ -72,7 +112,12 @@ impl AiAgent {
         match result {
             Ok(Ok(response)) => {
                 if let Ok(api_response) = response.json::<ApiResponse>().await {
-                    if let Some(text) = api_response.content.first().and_then(|c| c.text.as_ref()) {
+                    if let Some(text) = api_response
+                        .candidates
+                        .first()
+                        .and_then(|c| c.content.parts.first())
+                        .map(|p| &p.text)
+                    {
                         self.history.add_assistant(text.clone());
                         match protocol::parse_command(text) {
                             Ok(cmd) => return cmd,
