@@ -224,8 +224,8 @@ async fn run_game(
             terminal.draw(|frame| {
                 let layout = AppLayout::compute(frame.area());
 
-                let pixel_w = layout.arena.width as usize;
-                let pixel_h = (layout.arena.height as usize) * 2;
+                let pixel_w = (layout.arena.width as usize) * 2;
+                let pixel_h = (layout.arena.height as usize) * 4;
                 let mut canvas = PixelCanvas::new(pixel_w, pixel_h);
                 let vp =
                     Viewport::new(game.arena.width, game.arena.height, pixel_w, pixel_h);
@@ -326,8 +326,8 @@ async fn run_game(
             terminal.draw(|frame| {
                 let layout = AppLayout::compute(frame.area());
 
-                let pixel_w = layout.arena.width as usize;
-                let pixel_h = (layout.arena.height as usize) * 2;
+                let pixel_w = (layout.arena.width as usize) * 2;
+                let pixel_h = (layout.arena.height as usize) * 4;
                 let mut canvas = PixelCanvas::new(pixel_w, pixel_h);
                 let vp =
                     Viewport::new(game.arena.width, game.arena.height, pixel_w, pixel_h);

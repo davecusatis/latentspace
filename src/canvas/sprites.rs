@@ -41,11 +41,11 @@ pub fn draw_ship(canvas: &mut PixelCanvas, ship: &Ship, ship_idx: usize, vp: &Vi
     let cy = vp.to_pixel_y(ship.position.y);
     let color = SHIP_COLORS[ship_idx];
 
-    canvas.draw_circle(cx, cy, 3.0, color);
+    canvas.draw_circle(cx, cy, 6.0, color);
 
     let rad = ship.heading.to_radians();
-    let nose_x = cx + rad.cos() * 5.0;
-    let nose_y = cy + rad.sin() * 5.0;
+    let nose_x = cx + rad.cos() * 10.0;
+    let nose_y = cy + rad.sin() * 10.0;
     canvas.draw_line(cx as i32, cy as i32, nose_x as i32, nose_y as i32, color);
 }
 
@@ -61,7 +61,7 @@ pub fn draw_sensor_range(canvas: &mut PixelCanvas, ship: &Ship, vp: &Viewport) {
 pub fn draw_projectile(canvas: &mut PixelCanvas, proj: &Projectile, vp: &Viewport) {
     let px = vp.to_pixel_x(proj.position.x);
     let py = vp.to_pixel_y(proj.position.y);
-    canvas.draw_circle(px, py, 1.0, PROJECTILE_COLOR);
+    canvas.draw_circle(px, py, 2.0, PROJECTILE_COLOR);
 }
 
 /// Draw the arena boundary as a dim border.
@@ -81,7 +81,7 @@ pub fn draw_shield(canvas: &mut PixelCanvas, ship: &Ship, ship_idx: usize, vp: &
         let cx = vp.to_pixel_x(ship.position.x);
         let cy = vp.to_pixel_y(ship.position.y);
         let color = Color::Rgb(80, 80, 255);
-        canvas.draw_ring(cx, cy, 5.0, 1.0, color);
+        canvas.draw_ring(cx, cy, 10.0, 2.0, color);
     }
     let _ = ship_idx;
 }

@@ -3,27 +3,28 @@ use ratatui::layout::Rect;
 use ratatui::style::Color;
 use ratatui::widgets::Widget;
 
-/// A pixel buffer that renders using half-block characters.
-/// Each terminal cell represents 2 vertical pixels using ▀ with
-/// foreground = top pixel, background = bottom pixel.
+/// A pixel buffer that renders using Unicode braille characters (U+2800–U+28FF).
+/// Each terminal cell represents a 2×4 dot grid, giving 4× the resolution
+/// of half-block rendering.
 pub struct PixelCanvas {
-    width: usize,
-    height: usize, // must be even — represents pixel rows
-    pixels: Vec<Color>,
+    width: usize,  // pixel columns, must be multiple of 2
+    height: usize, // pixel rows, must be multiple of 4
+    dots: Vec<bool>,
+    cell_colors: Vec<Color>, // one per terminal cell (last-write-wins)
 }
 
 impl PixelCanvas {
-    /// Create a canvas. `pixel_height` will be rounded up to even.
+    /// Create a canvas. Width is rounded up to even, height to multiple of 4.
     pub fn new(width: usize, pixel_height: usize) -> Self {
-        let height = if pixel_height.is_multiple_of(2) {
-            pixel_height
-        } else {
-            pixel_height + 1
-        };
+        let w = if width.is_multiple_of(2) { width } else { width + 1 };
+        let h = pixel_height.div_ceil(4) * 4;
+        let cell_w = w / 2;
+        let cell_h = h / 4;
         Self {
-            width,
-            height,
-            pixels: vec![Color::Black; width * height],
+            width: w,
+            height: h,
+            dots: vec![false; w * h],
+            cell_colors: vec![Color::Black; cell_w * cell_h],
         }
     }
 
@@ -35,24 +36,28 @@ impl PixelCanvas {
         self.height
     }
 
-    /// Terminal rows needed = pixel_height / 2
+    /// Terminal rows needed = pixel_height / 4
     pub fn cell_height(&self) -> usize {
-        self.height / 2
+        self.height / 4
     }
 
     pub fn clear(&mut self) {
-        self.pixels.fill(Color::Black);
+        self.dots.fill(false);
+        self.cell_colors.fill(Color::Black);
     }
 
     pub fn set_pixel(&mut self, x: usize, y: usize, color: Color) {
         if x < self.width && y < self.height {
-            self.pixels[y * self.width + x] = color;
+            self.dots[y * self.width + x] = true;
+            let cell_w = self.width / 2;
+            self.cell_colors[(y / 4) * cell_w + (x / 2)] = color;
         }
     }
 
     pub fn get_pixel(&self, x: usize, y: usize) -> Color {
-        if x < self.width && y < self.height {
-            self.pixels[y * self.width + x]
+        if x < self.width && y < self.height && self.dots[y * self.width + x] {
+            let cell_w = self.width / 2;
+            self.cell_colors[(y / 4) * cell_w + (x / 2)]
         } else {
             Color::Black
         }
@@ -128,20 +133,40 @@ impl PixelCanvas {
     }
 }
 
-/// Widget implementation — renders the pixel buffer into a ratatui area.
+/// Widget implementation — renders the pixel buffer as braille characters.
 impl Widget for &PixelCanvas {
     fn render(self, area: Rect, buf: &mut Buffer) {
-        let rows = self.cell_height().min(area.height as usize);
-        let cols = self.width.min(area.width as usize);
+        let cell_rows = self.cell_height().min(area.height as usize);
+        let cell_cols = (self.width / 2).min(area.width as usize);
 
-        for row in 0..rows {
-            for col in 0..cols {
-                let top = self.get_pixel(col, row * 2);
-                let bottom = self.get_pixel(col, row * 2 + 1);
-                let cell = &mut buf[(area.x + col as u16, area.y + row as u16)];
-                cell.set_char('\u{2580}');
-                cell.set_fg(top);
-                cell.set_bg(bottom);
+        for row in 0..cell_rows {
+            for col in 0..cell_cols {
+                let px = col * 2;
+                let py = row * 4;
+
+                // Encode 2×4 dots into braille pattern.
+                // Braille dot positions:
+                //   Col 0: bits 0,1,2,6  (rows 0–3)
+                //   Col 1: bits 3,4,5,7  (rows 0–3)
+                let mut pattern: u8 = 0;
+                if self.dots[py * self.width + px]           { pattern |= 0x01; }
+                if self.dots[(py + 1) * self.width + px]     { pattern |= 0x02; }
+                if self.dots[(py + 2) * self.width + px]     { pattern |= 0x04; }
+                if self.dots[(py + 3) * self.width + px]     { pattern |= 0x40; }
+                if self.dots[py * self.width + px + 1]       { pattern |= 0x08; }
+                if self.dots[(py + 1) * self.width + px + 1] { pattern |= 0x10; }
+                if self.dots[(py + 2) * self.width + px + 1] { pattern |= 0x20; }
+                if self.dots[(py + 3) * self.width + px + 1] { pattern |= 0x80; }
+
+                if pattern != 0 {
+                    let ch = char::from_u32(0x2800 + pattern as u32).unwrap();
+                    let cell_w = self.width / 2;
+                    let color = self.cell_colors[row * cell_w + col];
+                    let cell = &mut buf[(area.x + col as u16, area.y + row as u16)];
+                    cell.set_char(ch);
+                    cell.set_fg(color);
+                    cell.set_bg(Color::Black);
+                }
             }
         }
     }
@@ -156,18 +181,27 @@ mod tests {
         let c = PixelCanvas::new(80, 48);
         assert_eq!(c.pixel_width(), 80);
         assert_eq!(c.pixel_height(), 48);
-        assert_eq!(c.cell_height(), 24);
+        assert_eq!(c.cell_height(), 12);
     }
 
     #[test]
-    fn canvas_odd_height_rounds_up() {
+    fn canvas_height_rounds_to_multiple_of_4() {
         let c = PixelCanvas::new(80, 47);
+        assert_eq!(c.pixel_height(), 48);
+
+        let c = PixelCanvas::new(80, 45);
         assert_eq!(c.pixel_height(), 48);
     }
 
     #[test]
+    fn canvas_odd_width_rounds_up() {
+        let c = PixelCanvas::new(79, 48);
+        assert_eq!(c.pixel_width(), 80);
+    }
+
+    #[test]
     fn set_and_get_pixel() {
-        let mut c = PixelCanvas::new(10, 10);
+        let mut c = PixelCanvas::new(10, 12);
         c.set_pixel(5, 5, Color::Red);
         assert_eq!(c.get_pixel(5, 5), Color::Red);
         assert_eq!(c.get_pixel(0, 0), Color::Black);
@@ -175,14 +209,14 @@ mod tests {
 
     #[test]
     fn out_of_bounds_ignored() {
-        let mut c = PixelCanvas::new(10, 10);
+        let mut c = PixelCanvas::new(10, 12);
         c.set_pixel(100, 100, Color::Red);
         assert_eq!(c.get_pixel(100, 100), Color::Black);
     }
 
     #[test]
     fn clear_resets_all() {
-        let mut c = PixelCanvas::new(10, 10);
+        let mut c = PixelCanvas::new(10, 12);
         c.set_pixel(5, 5, Color::Red);
         c.clear();
         assert_eq!(c.get_pixel(5, 5), Color::Black);
