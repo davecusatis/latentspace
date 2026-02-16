@@ -22,6 +22,12 @@ use ui::hud::{MatchInfo, ShipHud};
 use ui::layout::AppLayout;
 use ui::marquee::EventLog;
 
+/// Projectiles complete their visual interpolation this many times faster than
+/// ships.  With a value of 3.0 and a normal interpolation window of 400 ms,
+/// projectiles reach their final position in ~133 ms, making them visually
+/// distinct from the slower ship movement.
+const PROJECTILE_VISUAL_SPEED: f64 = 3.0;
+
 #[derive(Parser)]
 #[command(name = "latentspace")]
 #[command(about = "AI Spaceship Deathmatch Arena")]
@@ -232,12 +238,14 @@ async fn run_game(
                     sprites::draw_shield(&mut canvas, &interp_ship, i, &vp);
                 }
 
-                // Interpolate projectile positions
+                // Interpolate projectile positions — projectiles move visually
+                // faster than ships so combat reads more clearly.
+                let proj_t = (t * PROJECTILE_VISUAL_SPEED).min(1.0);
                 for (j, proj) in game.projectiles.iter().enumerate() {
                     let mut interp_proj = proj.clone();
                     if j < prev_projectiles.len() {
                         interp_proj.position =
-                            prev_projectiles[j].position.lerp(proj.position, t);
+                            prev_projectiles[j].position.lerp(proj.position, proj_t);
                     }
                     sprites::draw_projectile(&mut canvas, &interp_proj, &vp);
                 }
