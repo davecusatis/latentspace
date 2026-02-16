@@ -13,6 +13,12 @@ pub struct ConversationHistory {
     messages: Vec<Message>,
 }
 
+impl Default for ConversationHistory {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ConversationHistory {
     pub fn new() -> Self {
         Self {

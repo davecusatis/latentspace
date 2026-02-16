@@ -149,6 +149,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn run_game(
     terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
     game: &mut GameState,
@@ -222,10 +223,10 @@ async fn run_game(
                 sprites::draw_arena_border(&mut canvas);
 
                 // Interpolate ship positions
-                for i in 0..2 {
+                for (i, prev_ship) in prev_ships.iter().enumerate() {
                     let mut interp_ship = game.ships[i].clone();
                     interp_ship.position =
-                        prev_ships[i].position.lerp(game.ships[i].position, t);
+                        prev_ship.position.lerp(game.ships[i].position, t);
                     sprites::draw_sensor_range(&mut canvas, &interp_ship, &vp);
                     sprites::draw_ship(&mut canvas, &interp_ship, i, &vp);
                     sprites::draw_shield(&mut canvas, &interp_ship, i, &vp);

@@ -15,7 +15,7 @@ pub struct PixelCanvas {
 impl PixelCanvas {
     /// Create a canvas. `pixel_height` will be rounded up to even.
     pub fn new(width: usize, pixel_height: usize) -> Self {
-        let height = if pixel_height % 2 == 0 {
+        let height = if pixel_height.is_multiple_of(2) {
             pixel_height
         } else {
             pixel_height + 1

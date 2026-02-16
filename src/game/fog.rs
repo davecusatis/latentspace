@@ -1,4 +1,3 @@
-use super::Vec2;
 use super::ship::{Ship, SENSOR_RANGE};
 use super::projectile::Projectile;
 
@@ -19,6 +18,7 @@ pub fn visible_projectiles(observer: &Ship, projectiles: &[Projectile]) -> Vec<P
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::game::Vec2;
 
     #[test]
     fn ship_visible_within_range() {

@@ -1,4 +1,3 @@
-use super::Vec2;
 use super::ship::Ship;
 
 pub const HIT_RADIUS: f64 = 8.0;
@@ -43,6 +42,7 @@ impl Arena {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::game::Vec2;
 
     #[test]
     fn boundary_bounces_ship() {
