@@ -35,11 +35,11 @@ struct Cli {
     ship2: String,
 
     /// Maximum turns before timeout
-    #[arg(long, default_value_t = 200)]
+    #[arg(long, default_value_t = 100)]
     turns: i32,
 
     /// Arena dimensions (WxH)
-    #[arg(long, default_value = "800x400")]
+    #[arg(long, default_value = "600x300")]
     arena: String,
 
     /// Animation speed
@@ -64,9 +64,9 @@ fn parse_arena_size(s: &str) -> (f64, f64) {
 
 fn interpolation_duration(speed: &str) -> Duration {
     match speed {
-        "fast" => Duration::from_millis(300),
-        "slow" => Duration::from_millis(1500),
-        _ => Duration::from_millis(750),
+        "fast" => Duration::from_millis(150),
+        "slow" => Duration::from_millis(1000),
+        _ => Duration::from_millis(400),
     }
 }
 
