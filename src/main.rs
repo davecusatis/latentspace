@@ -1,7 +1,7 @@
-mod ai;
-mod canvas;
-mod game;
-mod ui;
+pub mod ai;
+pub mod canvas;
+pub mod game;
+pub mod ui;
 
 use std::io;
 use std::time::{Duration, Instant};
