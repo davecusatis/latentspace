@@ -293,6 +293,15 @@ async fn run_game(
         let cmd1 = cmd1_result.unwrap();
         let cmd2 = cmd2_result.unwrap();
 
+        // Apply Phase 1 elapsed movement to actual projectile positions so
+        // they continue from where they were visually, not snap back.
+        let phase1_t = ai_start.elapsed().as_secs_f64() / interp_dur.as_secs_f64();
+        for proj in &mut game.projectiles {
+            proj.position = proj.position + proj.velocity * phase1_t;
+        }
+        let (aw, ah) = (game.arena.width, game.arena.height);
+        game.projectiles.retain(|p| p.is_in_bounds(aw, ah));
+
         // ===== Advance simulation =====
         game.advance([cmd1, cmd2]);
         event_log.push_game_events(&game.events);
