@@ -7,6 +7,7 @@ pub struct Projectile {
     pub velocity: Vec2,
     pub damage: i32,
     pub owner: usize,
+    pub distance_traveled: f64,
 }
 
 impl Projectile {
@@ -18,6 +19,7 @@ impl Projectile {
             velocity: direction * ship::PRIMARY_PROJECTILE_SPEED + ship.velocity,
             damage: ship::PRIMARY_DAMAGE,
             owner,
+            distance_traveled: 0.0,
         }
     }
 
@@ -29,10 +31,23 @@ impl Projectile {
             velocity: direction * ship::SECONDARY_PROJECTILE_SPEED + ship.velocity,
             damage: ship::SECONDARY_DAMAGE,
             owner,
+            distance_traveled: 0.0,
         }
     }
 
+    /// Returns the effective damage after applying the arming distance scaling.
+    /// Damage scales from PROJECTILE_MIN_DAMAGE_FRACTION at d=0 to 100% at
+    /// d >= PROJECTILE_ARM_DISTANCE.
+    pub fn effective_damage(&self) -> i32 {
+        let t = (self.distance_traveled / ship::PROJECTILE_ARM_DISTANCE).min(1.0);
+        let fraction = ship::PROJECTILE_MIN_DAMAGE_FRACTION
+            + (1.0 - ship::PROJECTILE_MIN_DAMAGE_FRACTION) * t;
+        (self.damage as f64 * fraction).round() as i32
+    }
+
     pub fn update(&mut self) {
+        let step = self.velocity.magnitude();
+        self.distance_traveled += step;
         self.position = self.position + self.velocity;
     }
 
@@ -40,6 +55,8 @@ impl Projectile {
     /// `dt` should be 1.0/substeps so the total displacement per full turn
     /// is the same as a single `update()` call.
     pub fn update_substep(&mut self, dt: f64) {
+        let step = (self.velocity * dt).magnitude();
+        self.distance_traveled += step;
         self.position = self.position + self.velocity * dt;
     }
 
@@ -98,5 +115,60 @@ mod tests {
             quarter_move,
             expected
         );
+    }
+
+    #[test]
+    fn effective_damage_min_at_zero_distance() {
+        let proj = Projectile {
+            position: Vec2::new(0.0, 0.0),
+            velocity: Vec2::new(20.0, 0.0),
+            damage: 10,
+            owner: 0,
+            distance_traveled: 0.0,
+        };
+        let dmg = proj.effective_damage();
+        // 25% of 10 = 2.5, rounded to 3
+        assert_eq!(dmg, 3);
+    }
+
+    #[test]
+    fn effective_damage_full_at_arm_distance() {
+        let proj = Projectile {
+            position: Vec2::new(0.0, 0.0),
+            velocity: Vec2::new(20.0, 0.0),
+            damage: 10,
+            owner: 0,
+            distance_traveled: ship::PROJECTILE_ARM_DISTANCE,
+        };
+        assert_eq!(proj.effective_damage(), 10);
+    }
+
+    #[test]
+    fn effective_damage_full_beyond_arm_distance() {
+        let proj = Projectile {
+            position: Vec2::new(0.0, 0.0),
+            velocity: Vec2::new(20.0, 0.0),
+            damage: 25,
+            owner: 0,
+            distance_traveled: 100.0,
+        };
+        assert_eq!(proj.effective_damage(), 25);
+    }
+
+    #[test]
+    fn distance_tracked_on_update() {
+        let ship = ship::Ship::new(Vec2::new(100.0, 100.0), 0.0);
+        let mut proj = Projectile::spawn_primary(&ship, 0);
+        assert!((proj.distance_traveled - 0.0).abs() < 1e-10);
+        proj.update();
+        assert!(proj.distance_traveled > 0.0);
+    }
+
+    #[test]
+    fn distance_tracked_on_substep() {
+        let ship = ship::Ship::new(Vec2::new(100.0, 100.0), 0.0);
+        let mut proj = Projectile::spawn_primary(&ship, 0);
+        proj.update_substep(0.25);
+        assert!(proj.distance_traveled > 0.0);
     }
 }

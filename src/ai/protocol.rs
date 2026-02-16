@@ -44,6 +44,7 @@ pub struct EnemyShipView {
     pub bearing: f64,
     pub turn_to_aim: f64,
     pub lead_turn_to_aim: f64,
+    pub closing_speed: f64,
 }
 
 #[derive(Debug, Serialize)]
@@ -126,6 +127,14 @@ pub fn build_game_state(
         if lead_turn > 180.0 { lead_turn -= 360.0; }
         if lead_turn < -180.0 { lead_turn += 360.0; }
 
+        // Closing speed: dot product of relative velocity along the line between ships.
+        // Positive means approaching.
+        let rel_vx = observer.velocity.x - opponent.velocity.x;
+        let rel_vy = observer.velocity.y - opponent.velocity.y;
+        let dir_x = dx / distance;
+        let dir_y = dy / distance;
+        let closing_speed = rel_vx * dir_x + rel_vy * dir_y;
+
         Some(EnemyShipView {
             position: opponent.position,
             velocity: opponent.velocity,
@@ -134,6 +143,7 @@ pub fn build_game_state(
             bearing,
             turn_to_aim,
             lead_turn_to_aim: lead_turn,
+            closing_speed,
         })
     } else {
         None

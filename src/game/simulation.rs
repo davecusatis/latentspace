@@ -82,6 +82,11 @@ impl GameState {
             ship.update_position();
         }
 
+        // Ram damage and knockback: resolve after ships move, before projectiles
+        let ram_events = combat::resolve_ram_damage(&mut self.ships);
+        self.events.extend(ram_events);
+        combat::apply_proximity_knockback(&mut self.ships);
+
         // Projectile sub-stepping: move projectiles in smaller increments for
         // smoother visuals and more accurate collision detection.
         let dt = 1.0 / PROJECTILE_SUBSTEPS as f64;
@@ -207,6 +212,7 @@ mod tests {
             velocity: vel,
             damage: 10,
             owner: 0,
+            distance_traveled: 0.0,
         };
         p_full.update();
         let full_end = p_full.position;
@@ -217,6 +223,7 @@ mod tests {
             velocity: vel,
             damage: 10,
             owner: 0,
+            distance_traveled: 0.0,
         };
         let dt = 1.0 / PROJECTILE_SUBSTEPS as f64;
         for _ in 0..PROJECTILE_SUBSTEPS {

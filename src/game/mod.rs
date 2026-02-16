@@ -44,6 +44,13 @@ impl std::ops::Add for Vec2 {
     }
 }
 
+impl std::ops::Sub for Vec2 {
+    type Output = Self;
+    fn sub(self, rhs: Self) -> Self {
+        Self { x: self.x - rhs.x, y: self.y - rhs.y }
+    }
+}
+
 impl std::ops::Mul<f64> for Vec2 {
     type Output = Self;
     fn mul(self, rhs: f64) -> Self {

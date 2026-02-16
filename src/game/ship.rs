@@ -22,6 +22,14 @@ pub const SHIP_COLLISION_RADIUS: f64 = 8.0;
 pub const SHIELD_DAMAGE_REDUCTION: f64 = 0.5;
 pub const PRIMARY_PROJECTILE_SPEED: f64 = 20.0;
 pub const SECONDARY_PROJECTILE_SPEED: f64 = 16.0;
+pub const RAM_RADIUS: f64 = 20.0;
+pub const RAM_DAMAGE_RAMMER: i32 = 30;
+pub const RAM_DAMAGE_RECEIVER: i32 = 10;
+pub const RAM_SPEED_THRESHOLD: f64 = 5.0;
+pub const KNOCKBACK_RADIUS: f64 = 16.0;
+pub const KNOCKBACK_FORCE: f64 = 8.0;
+pub const PROJECTILE_ARM_DISTANCE: f64 = 30.0;
+pub const PROJECTILE_MIN_DAMAGE_FRACTION: f64 = 0.25;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Ship {

@@ -62,6 +62,10 @@ fn format_event(event: &GameEvent) -> (String, Color) {
             format!("{} hit boundary", SHIP_NAMES[*i]),
             Color::DarkGray,
         ),
+        GameEvent::RamDamage { ship, damage } => (
+            format!("{} RAMMED! -{} HP", SHIP_NAMES[*ship], damage),
+            Color::Rgb(255, 165, 0), // orange
+        ),
     }
 }
 

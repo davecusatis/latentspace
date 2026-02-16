@@ -341,7 +341,7 @@ async fn run_game(
         game.advance([cmd1, cmd2]);
         event_log.push_game_events(&game.events);
 
-        // Spawn explosions for hit/destroyed events
+        // Spawn explosions for hit/destroyed/ram events
         for event in &game.events {
             match event {
                 GameEvent::ShipHit { target, .. } => {
@@ -349,6 +349,9 @@ async fn run_game(
                 }
                 GameEvent::ShipDestroyed(i) => {
                     explosions.push(Explosion::destroyed(game.ships[*i].position));
+                }
+                GameEvent::RamDamage { ship, .. } => {
+                    explosions.push(Explosion::hit(game.ships[*ship].position));
                 }
                 _ => {}
             }
