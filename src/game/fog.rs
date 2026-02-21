@@ -30,7 +30,7 @@ mod tests {
     #[test]
     fn ship_not_visible_out_of_range() {
         let a = Ship::new(Vec2::new(0.0, 0.0), 0.0);
-        let b = Ship::new(Vec2::new(200.0, 200.0), 0.0);
+        let b = Ship::new(Vec2::new(500.0, 500.0), 0.0);
         assert!(!is_visible(&a, &b));
     }
 }

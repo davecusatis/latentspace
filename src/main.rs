@@ -46,7 +46,7 @@ enum Command {
         ship2: String,
 
         /// Maximum turns before timeout
-        #[arg(long, default_value_t = 100)]
+        #[arg(long, default_value_t = 500)]
         turns: i32,
 
         /// Arena dimensions (WxH)
