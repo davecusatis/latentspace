@@ -13,8 +13,8 @@ use crossterm::ExecutableCommand;
 use ratatui::backend::CrosstermBackend;
 use ratatui::Terminal;
 
-use ai::client::AiAgent;
 use ai::protocol::{self, ShipCommand};
+use ai::script::ScriptAgent;
 use canvas::renderer::PixelCanvas;
 use canvas::sprites::{self, Explosion, Viewport};
 use game::combat::GameEvent;
@@ -29,29 +29,39 @@ use ui::startup_overlay::StartupOverlay;
 #[command(name = "latentspace")]
 #[command(about = "AI Spaceship Deathmatch Arena")]
 struct Cli {
-    /// Path to Ship 1's prompt file
-    #[arg(long)]
-    ship1: String,
+    #[command(subcommand)]
+    command: Command,
+}
 
-    /// Path to Ship 2's prompt file
-    #[arg(long)]
-    ship2: String,
+#[derive(clap::Subcommand)]
+enum Command {
+    /// Run a match between two Lua scripts
+    Play {
+        /// Path to Ship 1's Lua script
+        #[arg(long)]
+        ship1: String,
 
-    /// Maximum turns before timeout
-    #[arg(long, default_value_t = 100)]
-    turns: i32,
+        /// Path to Ship 2's Lua script
+        #[arg(long)]
+        ship2: String,
 
-    /// Arena dimensions (WxH)
-    #[arg(long, default_value = "600x300")]
-    arena: String,
+        /// Maximum turns before timeout
+        #[arg(long, default_value_t = 100)]
+        turns: i32,
 
-    /// Animation speed
-    #[arg(long, default_value = "normal")]
-    speed: String,
+        /// Arena dimensions (WxH)
+        #[arg(long, default_value = "600x300")]
+        arena: String,
 
-    /// Google API key (or set GOOGLE_API_KEY env var)
-    #[arg(long, env = "GOOGLE_API_KEY")]
-    api_key: String,
+        /// Animation speed
+        #[arg(long, default_value = "normal")]
+        speed: String,
+    },
+    /// Validate a Lua script without running a match
+    Validate {
+        /// Path to the Lua script to validate
+        script: String,
+    },
 }
 
 fn parse_arena_size(s: &str) -> (f64, f64) {
@@ -73,26 +83,73 @@ fn interpolation_duration(speed: &str) -> Duration {
     }
 }
 
-#[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
+fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cli = Cli::parse();
+    match cli.command {
+        Command::Validate { script } => run_validate(&script),
+        Command::Play {
+            ship1,
+            ship2,
+            turns,
+            arena,
+            speed,
+        } => run_play(&ship1, &ship2, turns, &arena, &speed),
+    }
+}
 
-    let prompt1 = std::fs::read_to_string(&cli.ship1)?;
-    let prompt2 = std::fs::read_to_string(&cli.ship2)?;
-    let (arena_w, arena_h) = parse_arena_size(&cli.arena);
-    let interp_dur = interpolation_duration(&cli.speed);
+fn run_validate(script_path: &str) -> Result<(), Box<dyn std::error::Error>> {
+    let source = std::fs::read_to_string(script_path)?;
+    let result = ai::validate::validate_source(&source);
 
-    let mut agent1 = AiAgent::new(cli.api_key.clone(), prompt1);
-    let mut agent2 = AiAgent::new(cli.api_key.clone(), prompt2);
+    println!("Validating {}...", script_path);
+    for check in &result.checks {
+        let icon = if check.passed { "PASS" } else { "FAIL" };
+        println!("  [{}] {}", icon, check.name);
+        if let Some(ref err) = check.error {
+            println!("    Error: {}", err);
+        }
+        if let Some(ref cmd) = check.command_output {
+            println!(
+                "    Output: thrust={:.1}  turn={:.1}  fire_primary={}  fire_secondary={}  shield={}",
+                cmd.thrust, cmd.turn, cmd.fire_primary, cmd.fire_secondary, cmd.shield
+            );
+        }
+    }
+    println!();
+    println!(
+        "  Result: {}/{} checks passed",
+        result.passed_count(),
+        result.total_count()
+    );
 
-    let mut game = GameState::new(arena_w, arena_h, cli.turns);
+    if result.all_passed() {
+        Ok(())
+    } else {
+        std::process::exit(1);
+    }
+}
+
+fn run_play(
+    ship1_path: &str,
+    ship2_path: &str,
+    turns: i32,
+    arena_str: &str,
+    speed: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let (arena_w, arena_h) = parse_arena_size(arena_str);
+    let interp_dur = interpolation_duration(speed);
+
+    let agent1 = ScriptAgent::from_file(ship1_path)?;
+    let agent2 = ScriptAgent::from_file(ship2_path)?;
+
+    let mut game = GameState::new(arena_w, arena_h, turns);
     let mut event_log = EventLog::new(50);
 
-    let ship1_name = std::path::Path::new(&cli.ship1)
+    let ship1_name = std::path::Path::new(ship1_path)
         .file_stem()
         .map(|s| s.to_string_lossy().to_string())
         .unwrap_or_else(|| "Ship 1".to_string());
-    let ship2_name = std::path::Path::new(&cli.ship2)
+    let ship2_name = std::path::Path::new(ship2_path)
         .file_stem()
         .map(|s| s.to_string_lossy().to_string())
         .unwrap_or_else(|| "Ship 2".to_string());
@@ -106,14 +163,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let result = run_game(
         &mut terminal,
         &mut game,
-        &mut agent1,
-        &mut agent2,
+        &agent1,
+        &agent2,
         &mut event_log,
         &ship1_name,
         &ship2_name,
         interp_dur,
-    )
-    .await;
+    );
 
     // Restore terminal
     terminal::disable_raw_mode()?;
@@ -153,11 +209,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 #[allow(clippy::too_many_arguments)]
-async fn run_game(
+fn run_game(
     terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
     game: &mut GameState,
-    agent1: &mut AiAgent,
-    agent2: &mut AiAgent,
+    agent1: &ScriptAgent,
+    agent2: &ScriptAgent,
     event_log: &mut EventLog,
     ship1_name: &str,
     ship2_name: &str,
@@ -171,182 +227,29 @@ async fn run_game(
     loop {
         // Snapshot previous state for interpolation
         let prev_ships = game.ships.clone();
-        let prev_projectiles = game.projectiles.clone();
 
-        // Build game state JSON for each AI
-        let state1_json = serde_json::to_string(&protocol::build_game_state(
+        // Build game state for each ship
+        let state1 = protocol::build_game_state(
             game.turn,
             0,
             &game.ships,
             &game.projectiles,
             game.arena.width,
             game.arena.height,
-        ))?;
-        let state2_json = serde_json::to_string(&protocol::build_game_state(
+        );
+        let state2 = protocol::build_game_state(
             game.turn,
             1,
             &game.ships,
             &game.projectiles,
             game.arena.width,
             game.arena.height,
-        ))?;
+        );
 
-        // ===== PHASE 1: Render continuously while waiting for AI responses =====
-        let ai_start = Instant::now();
-
-        let cmd1_future = agent1.get_command(&state1_json);
-        let cmd2_future = agent2.get_command(&state2_json);
-        tokio::pin!(cmd1_future);
-        tokio::pin!(cmd2_future);
-
-        let mut cmd1_result: Option<ShipCommand> = None;
-        let mut cmd2_result: Option<ShipCommand> = None;
-
-        while cmd1_result.is_none() || cmd2_result.is_none() {
-            // Poll AI futures with a short timeout for frame rendering
-            tokio::select! {
-                biased;
-                cmd = &mut cmd1_future, if cmd1_result.is_none() => {
-                    cmd1_result = Some(cmd);
-                }
-                cmd = &mut cmd2_future, if cmd2_result.is_none() => {
-                    cmd2_result = Some(cmd);
-                }
-                _ = tokio::time::sleep(Duration::from_millis(16)) => {}
-            }
-
-            // Render frame with projectile extrapolation
-            let elapsed = ai_start.elapsed().as_secs_f64();
-
-            // Check for Ctrl+C or debug toggle
-            if event::poll(Duration::from_millis(0))? {
-                if let Event::Key(key) = event::read()? {
-                    if key.kind == KeyEventKind::Press {
-                        if key.code == KeyCode::Char('c')
-                            && key.modifiers.contains(crossterm::event::KeyModifiers::CONTROL)
-                        {
-                            return Ok(game.result());
-                        }
-                        if key.code == KeyCode::Char('d') {
-                            debug_visible = !debug_visible;
-                        }
-                    }
-                }
-            }
-
-            terminal.draw(|frame| {
-                let layout = AppLayout::compute(frame.area());
-
-                let pixel_w = (layout.arena.width as usize) * 2;
-                let pixel_h = (layout.arena.height as usize) * 4;
-                let mut canvas = PixelCanvas::new(pixel_w, pixel_h);
-                let vp =
-                    Viewport::new(game.arena.width, game.arena.height, pixel_w, pixel_h);
-
-                sprites::draw_starfield(&mut canvas);
-                sprites::draw_arena_border(&mut canvas);
-
-                // Ships: stay at current position (no new commands yet)
-                for (i, ship) in game.ships.iter().enumerate() {
-                    sprites::draw_sensor_range(&mut canvas, ship, &vp);
-                    sprites::draw_ship(&mut canvas, ship, i, &vp);
-                    sprites::draw_shield(&mut canvas, ship, i, &vp);
-                }
-
-                // Projectiles: extrapolate forward using velocity.
-                // velocity is in game-units per turn; one turn corresponds
-                // to interp_dur of real time, so elapsed / interp_dur gives
-                // the fraction of a turn to advance.
-                let proj_t = elapsed / interp_dur.as_secs_f64();
-                for proj in &prev_projectiles {
-                    let visual_pos = proj.position + proj.velocity * proj_t;
-                    // Only draw if still within arena bounds
-                    if visual_pos.x >= 0.0
-                        && visual_pos.x <= game.arena.width
-                        && visual_pos.y >= 0.0
-                        && visual_pos.y <= game.arena.height
-                    {
-                        let mut visual_proj = proj.clone();
-                        visual_proj.position = visual_pos;
-                        sprites::draw_projectile(&mut canvas, &visual_proj, &vp);
-                    }
-                }
-
-                // Active explosions (continuing from previous turn)
-                for explosion in &explosions {
-                    sprites::draw_explosion(&mut canvas, explosion, &vp);
-                }
-
-                frame.render_widget(&canvas, layout.arena);
-
-                // Startup overlay
-                if startup_overlay_start.is_some() {
-                    frame.render_widget(
-                        StartupOverlay { progress: 0.0 },
-                        layout.arena,
-                    );
-                }
-
-                if debug_visible {
-                    frame.render_widget(
-                        DebugOverlay {
-                            game,
-                            commands: &last_commands,
-                            ship_names: [ship1_name, ship2_name],
-                        },
-                        layout.arena,
-                    );
-                }
-
-                // HUD
-                frame.render_widget(
-                    ShipHud {
-                        ship: &game.ships[0],
-                        name: ship1_name,
-                        color: ratatui::style::Color::Cyan,
-                    },
-                    layout.ship1_hud,
-                );
-                frame.render_widget(
-                    ShipHud {
-                        ship: &game.ships[1],
-                        name: ship2_name,
-                        color: ratatui::style::Color::Magenta,
-                    },
-                    layout.ship2_hud,
-                );
-                frame.render_widget(
-                    MatchInfo {
-                        turn: game.turn,
-                        max_turns: game.max_turns,
-                    },
-                    layout.match_info,
-                );
-
-                // Marquee
-                frame.render_widget(event_log.widget(), layout.marquee);
-            })?;
-
-            // Tick ongoing explosions during Phase 1
-            let frame_dt = 0.016; // ~60fps
-            for explosion in &mut explosions {
-                explosion.tick(frame_dt);
-            }
-            explosions.retain(|e| e.is_alive());
-        }
-
-        let cmd1 = cmd1_result.unwrap();
-        let cmd2 = cmd2_result.unwrap();
+        // Call scripts (instant)
+        let cmd1 = agent1.get_command(&state1);
+        let cmd2 = agent2.get_command(&state2);
         last_commands = [cmd1.clone(), cmd2.clone()];
-
-        // Apply Phase 1 elapsed movement to actual projectile positions so
-        // they continue from where they were visually, not snap back.
-        let phase1_t = ai_start.elapsed().as_secs_f64() / interp_dur.as_secs_f64();
-        for proj in &mut game.projectiles {
-            proj.position = proj.position + proj.velocity * phase1_t;
-        }
-        let (aw, ah) = (game.arena.width, game.arena.height);
-        game.projectiles.retain(|p| p.is_in_bounds(aw, ah));
 
         // ===== Advance simulation =====
         game.advance([cmd1, cmd2]);
