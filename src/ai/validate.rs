@@ -103,8 +103,11 @@ fn call_think(lua: &Lua, state: &GameStateMessage) -> Result<(Value, CommandOutp
         .to_value_with(state, options)
         .map_err(|e| format!("failed to serialize state: {e}"))?;
 
+    // Provide a fresh memory table for each call
+    let memory = lua.create_table().map_err(|e| format!("{e}"))?;
+
     let result: Value = think
-        .call(state_value)
+        .call((state_value, memory))
         .map_err(|e| format!("{e}"))?;
 
     let output = extract_command_output(lua, &result)?;
