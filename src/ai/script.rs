@@ -228,11 +228,10 @@ mod tests {
 
     #[test]
     fn reads_state_fields_correctly() {
-        // Note: self_ship is serialized as "self" due to #[serde(rename = "self")]
-        // "self" is a Lua keyword so we must use state["self"] syntax
+        // self_ship is now serialized as "self_ship" so Lua can use dot access
         let agent = ScriptAgent::from_source(r#"
             function think(state, memory)
-                local me = state["self"]
+                local me = state.self_ship
                 return {
                     thrust = me.energy / 100.0,
                     turn = me.heading

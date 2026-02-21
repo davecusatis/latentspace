@@ -9,7 +9,7 @@ use crate::game::ship::{Ship, PRIMARY_PROJECTILE_SPEED};
 #[derive(Debug, Serialize)]
 pub struct GameStateMessage {
     pub turn: i32,
-    #[serde(rename = "self")]
+    #[serde(rename = "self_ship")]
     pub self_ship: SelfShipView,
     pub enemy: Option<EnemyShipView>,
     pub detected_projectiles: Vec<ProjectileView>,
@@ -273,7 +273,7 @@ mod tests {
         let state = build_game_state(1, 0, &ships, &[], 800.0, 400.0);
         let json = serde_json::to_value(&state).unwrap();
         assert_eq!(json["turn"], 1);
-        assert!(json.get("self").is_some());
+        assert!(json.get("self_ship").is_some());
         assert!(json["enemy"].is_null());
         assert_eq!(json["detected_by_enemy"], false);
     }
